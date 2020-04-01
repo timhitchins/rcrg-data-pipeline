@@ -224,8 +224,9 @@ leaflet(listAddressGeo_table) %>%
 
 ###################################################################
 # Pushing to NODE can go below here.  It needs to use the CKAN API
+# https://docs.ckan.org/en/2.8/maintaining/datastore.html#api-reference
 # with the Data Store API.  I beleive the upsert or DataStore request will work.  
-# https://docs.ckan.org/en/2.8/maintaining/datastore.html#ckanext.datastore.logic.action.datastore_search_sql
+# https://docs.ckan.org/en/2.8/maintaining/datastore.html#ckanext.datastore.logic.action.datastore_upsert
 # 
 # Below is a link of how I pull the data down in the to the app.  You can see how to build the URIs
 # You can look at some examples o fpulling the data down here
