@@ -16,7 +16,7 @@ if(!require(ckanr)) instll.packages("ckanr")
 if(!require(leaflet)) install.packages("leaflet")
 if(!require(rstudioapi)) install.packages("rstudioapi")
 if(!require(dotenv)) install.packages("dotenv")
-p_load(airtabler, tidyverse, ggmap, sf, lubridate, jsonlite, httr, ckanr, leaflet, rstudioapi, dotenv)
+p_load(airtabler, tidyverse, ggmap, sf, lubridate, ckanr, leaflet, rstudioapi, dotenv)
 
 
 ##################
@@ -204,11 +204,9 @@ st_write(geoJsonData, dsn = geoJsonFileName, driver = "GeoJSON", delete_dsn = TR
 ###################
 ## documentation for ckanr:
 ## https://cloud.r-project.org/web/packages/ckanr/ckanr.pdf
-# MAC_id <- "48a67749-a421-4a75-b4f6-75856fc864af"
-package_name <- "rose-city-resource-development"
-# listingId <- "9ef33a2a-dfbd-4104-9705-f5a7cfbb1403"
-# phoneId <- "3d4f644c-c40c-4efa-86cf-8963b0cffa7e"
-# geoDataId <- "55c33339-e6ac-4663-8f3c-6c67e5744f50"
+
+package_name <- "rose-city-resource-dev2"  ##this will need to change or be added to the sys envs
+
 
 ##create a new package if it doesn't exist
 checkPackage <- function(packageName){
@@ -287,12 +285,15 @@ handleNODEResources <- function(resourceNameList, resourceIdList, resourceFilePa
                                        name="RCR Geo Data",
                                        upload = geoJsonFileName, ## gloabl var
                                        format="GeoJSON")
-  }
+    
+    print(paste0("Created new resources in package", packageResponse$id))
+    }
   
 }
 
+## Create or update the resources
 handleNODEResources(resourceNames, resourceIds, resourceFilePaths, packageRes)
-
+print("Done...")
 ##########################
 # OPTIONAL MAPPING 
 # Use this to check on the 
