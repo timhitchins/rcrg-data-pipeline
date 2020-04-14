@@ -1,8 +1,12 @@
-###############################
-# AIRTABLE TO NODE
-###############################
-# This script is currently in development.
-###############################
+#######################################
+# AIRTABLE TO NODE ETL PIPELINE
+# 
+# THis script pulls dat from airtable, 
+# transforms it and then postd it to the 
+# Northwest Open Data Exchange (NODE).
+# 
+# Last update: 04/14/2020
+#######################################
 options(digits=7)
 options(stringsAsFactors = F)
 
@@ -19,41 +23,13 @@ if(!require(dotenv)) install.packages("dotenv")
 p_load(airtabler, tidyverse, ggmap, sf, lubridate, ckanr, leaflet, rstudioapi, dotenv)
 
 
-##################
-## Env constants 
-#################
-# setwd to the same dir as this script
-setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
-wd <- getwd()
-dotenv::load_dot_env(file = "rcrg.env") ##system env vars
-
-AIRTABLE_API_KEY = Sys.getenv("AIRTABLE_API_KEY")
-AIRTABLE_BASE_ID = Sys.getenv("AIRTABLE_BASE_ID")
-GOOGLE_API_KEY = Sys.getenv("GOOGLE_API_KEY")
-NODE_API_KEY = Sys.getenv("NODE_API_KEY") ##this is the key that will be needed to upload data to NODE
-##register the google geocoding API key
-register_google(GOOGLE_API_KEY)
-## setup CKAN
-ckanr_setup(url = "https://opendata.imspdx.org/", key = NODE_API_KEY)
-
-
-#####################
-#  Airtable constants
-####################
-##load in the base
-rcrg <- airtabler::airtable(base=AIRTABLE_BASE_ID, tables=c("listings","address", "phone"))
-##and the individual tables
-airListings <- rcrg$listings$select_all()
-airAddress <- rcrg$address$select_all()
-airPhone <- rcrg$phone$select_all()
-# servicesText <- rcrg$services_text$select_all()
-# contact <- rcrg$contacts$select_all()
-
-
-########################
-# WRANGLING PAHSE PT 1
-#######################
-wranglePhase1 <- function(listings, address){
+##############################
+# WRANGLING PREP TO CREATE 
+# LISTINGS WITH JOINED ADDRESS
+##############################
+createListingsTable <- function(listings, address){
+  
+  print("Creating listings with addresses...")
   listings$street <- as.character(listings$street)
   listAddress <- listings %>% left_join(address, by=c("street" = "id")) %>% 
     select(-c(street)) %>% rename(street=street.y) %>% 
@@ -63,15 +39,15 @@ wranglePhase1 <- function(listings, address){
                                      NA,
                                      paste(listAddress$street, 
                                            listAddress$city, "OR", listAddress$postal_code, sep=", "))
-
+  print("Done creating listings with addresses.")
   return(listAddress)  
 }
-listingAddress <- wranglePhase1(airListings, airAddress ) 
 
 ####################
-# GEOCODE PHASE
+# GEOCODE LISTINGS
 ####################
 geocodeListAddress <- function(listAddress){
+  print("Geocoding listings...")
   geo <- function(x){
     if(is.na(x)){
       return(NA)
@@ -94,24 +70,23 @@ geocodeListAddress <- function(listAddress){
   
   ##reorder cols
   GCAddressReorder <- c("id", "general_category", "main_category", "parent_organization",
-                        "listing", "street", "street2", "city", "neighborhood", 
+                        "listing", "service_description", "street", "street2", "city", "neighborhood", 
                         "postal_code", "county",
                         "website", "hours", "lon", "lat")
   listAddressGC <- listAddressGC[, GCAddressReorder] %>%
     arrange(general_category, main_category)
   
-  
+  print("Geocoding complete.")
   return(listAddressGC)
 }
 
-geocodeListingResults <- geocodeListAddress(listingAddress) 
 
 #######################
 # CREATE PHONE TABLE
 #######################
 ## clean the phone table
 createPhoneJoinTable <- function(phone, listings){
-  
+  print("Creating phone join table...")
   phoneKeepCols <- c("id", "phone", "phone2", "type")
   phone <- phone[,phoneKeepCols]
   
@@ -130,15 +105,14 @@ createPhoneJoinTable <- function(phone, listings){
   listingPhoneJoin$phone <- gsub("\\(", "", listingPhoneJoin$phone)
   listingPhoneJoin$phone <- gsub("\\) ", "-", listingPhoneJoin$phone)
 
-  
+  print("Done creating phone join table.")
   return( listingPhoneJoin)
 }
 
-phoneJoinTable <- createPhoneJoinTable(airPhone, airListings)
-
-
-
+## create the geoJSON data
 createGeoJson <- function(listingPhoneJoin, listAddressGC){
+  
+  print("Creating geoJSON data...")
   ## nest the phone data and join it to the listAddresses
   phoneNested <- as_tibble(listingPhoneJoin) %>% 
     nest(data = c(phone, phone2, type))
@@ -163,11 +137,9 @@ createGeoJson <- function(listingPhoneJoin, listAddressGC){
     ##convert to sf
     st_as_sf(coords = c("lon", "lat"), crs=4326, agr="constant")
 
+  print("Done creating geoJSON data.")
   return(listAddressPhoneGeo)
 }
-
-## This data does not contain NA lon/lat
-geoJsonData <- createGeoJson(phoneJoinTable, geocodeListingResults) 
 
 
 ######################
@@ -177,26 +149,24 @@ geoJsonData <- createGeoJson(phoneJoinTable, geocodeListingResults)
 
 # function to create a file name by date
 buildFileName <- function(workDir, tableName, ext){
+  
   date <- lubridate::today()
   filename <- paste0(workDir, "/", tableName, "-", date, ext)
+  print(paste("Created file name:", filename))
   return(filename)
 }
 
 # create the data dir
-dataDir <- paste0(wd, "/data")
-if(!dir.exists(dataDir)){
-  dir.create(dataDir)
+createDataDirectory <- function(workDir){
+  dataDir <- paste0(workDir, "/data")
+  if(!dir.exists(dataDir)){
+    print(paste("Creating", dataDir, "..."))
+    dir.create(dataDir)
+  }else{
+    print(paste("Directory", dataDir, "already exists..."))
+  }
+  return(dataDir)
 }
-
-# create new file names
-phoneFileName <- buildFileName(dataDir, "rcr-phone", ".csv")
-listingsFileName <- buildFileName(dataDir, "rcr-listings", ".csv")
-geoJsonFileName <- buildFileName(dataDir, "rcr-listings", ".geojson")
-
-# write files 
-write_csv(phoneJoinTable, phoneFileName)
-write_csv(geocodeListingResults, listingsFileName)
-st_write(geoJsonData, dsn = geoJsonFileName, driver = "GeoJSON", delete_dsn = TRUE)
 
 
 #####################
@@ -204,9 +174,6 @@ st_write(geoJsonData, dsn = geoJsonFileName, driver = "GeoJSON", delete_dsn = TR
 ###################
 ## documentation for ckanr:
 ## https://cloud.r-project.org/web/packages/ckanr/ckanr.pdf
-
-package_name <- "rose-city-resource-dev2"  ##this will need to change or be added to the sys envs
-
 
 ##create a new package if it doesn't exist
 checkPackage <- function(packageName){
@@ -238,13 +205,7 @@ checkPackage <- function(packageName){
   
 }
 
-packageRes <- checkPackage(package_name)
-resourceNames <- lapply(packageRes$resources, function(x) return( x$name ))
-resourceIds <- lapply(packageRes$resources, function(x) return( x$id ))
-resourceFilePaths <- list(listingsFileName, phoneFileName, geoJsonFileName)
-
-
-
+## create or update the resources
 handleNODEResources <- function(resourceNameList, resourceIdList, resourceFilePathsList, packageResponse){
 
   if(length(resourceNameList) > 0){
@@ -290,10 +251,66 @@ handleNODEResources <- function(resourceNameList, resourceIdList, resourceFilePa
     }
   
 }
+##################
+## Env constants 
+#################
+# setwd to the same dir as this script
+setwd(dirname(rstudioapi::getActiveDocumentContext()$path))
+wd <- getwd()
+dotenv::load_dot_env(file = "rcrg.env") ##system env vars
 
+AIRTABLE_API_KEY = Sys.getenv("AIRTABLE_API_KEY")
+AIRTABLE_BASE_ID = Sys.getenv("AIRTABLE_BASE_ID")
+GOOGLE_API_KEY = Sys.getenv("GOOGLE_API_KEY")
+NODE_API_KEY = Sys.getenv("NODE_API_KEY") ##this is the key that will be needed to upload data to NODE
+
+###############################
+#  Airtable and CKAN constants
+##############################
+##load in the airtable base
+rcrg <- airtabler::airtable(base=AIRTABLE_BASE_ID, tables=c("listings","address", "phone"))
+##and the individual tables
+airListings <- rcrg$listings$select_all()
+airAddress <- rcrg$address$select_all()
+airPhone <- rcrg$phone$select_all()
+# servicesText <- rcrg$services_text$select_all()
+# contact <- rcrg$contacts$select_all()
+
+##name of the CKAN package to be updated
+package_name <- "rose-city-resource-dev2"  ##this will need to change or be added to the sys envs
+
+######################
+# RUN PHASE
+####################
+##register the google geocoding API key
+register_google(GOOGLE_API_KEY)
+## register CKAN
+ckanr_setup(url = "https://opendata.imspdx.org/", key = NODE_API_KEY)
+# wrangle and create new tables
+listingAddress <- createListingsTable(airListings, airAddress ) 
+geocodeListingResults <- geocodeListAddress(listingAddress) 
+phoneJoinTable <- createPhoneJoinTable(airPhone, airListings)
+# create geoJSON data
+geoJsonData <- createGeoJson(phoneJoinTable, geocodeListingResults)  ## This data does not contain NA lon/lat
+# create data directory
+dataDir <- createDataDirectory(wd) 
+# create new file names
+phoneFileName <- buildFileName(dataDir, "rcr-phone", ".csv")
+listingsFileName <- buildFileName(dataDir, "rcr-listings", ".csv")
+geoJsonFileName <- buildFileName(dataDir, "rcr-listings", ".geojson")
+# write files 
+write_csv(phoneJoinTable, phoneFileName)
+write_csv(geocodeListingResults, listingsFileName)
+st_write(geoJsonData, dsn = geoJsonFileName, driver = "GeoJSON", delete_dsn = TRUE)
 ## Create or update the resources
+packageRes <- checkPackage(package_name)
+resourceNames <- lapply(packageRes$resources, function(x) return( x$name ))
+resourceIds <- lapply(packageRes$resources, function(x) return( x$id ))
+resourceFilePaths <- list(listingsFileName, phoneFileName, geoJsonFileName)
 handleNODEResources(resourceNames, resourceIds, resourceFilePaths, packageRes)
 print("Done...")
+
+
 ##########################
 # OPTIONAL MAPPING 
 # Use this to check on the 
@@ -324,84 +341,4 @@ print("Done...")
 #              ), 
 #              clusterOptions = markerClusterOptions(removeOutsideVisibleBounds = F)) %>%
 #   addLayersControl(baseGroups = c("Toner", "Toner Lite", "OSM"))
-
-
-
-#####################
-# TESTING BELOW
-####################
-##add in the new borader category
-###########################################
-# Nick and/or Spenser, it is possible this 
-# next set of cleaup logic will need 
-# to be stepped through as it has been a 
-# while and there 
-##########################################
-##CLEAN UP SPECIFIC RECORDS
-## NOTE THIS LOGIC NEED TO BE REVIEWED
-##fix coords for restrooms 
-##hawthorn bridge fix
-# lon <- -122.673447
-# lat <- 45.513892
-# listAddressGC$lon[listAddressGC$id=="recputpXitjqJT3Ao"] <- lon
-# listAddressGC$lat[listAddressGC$id=="recputpXitjqJT3Ao"] <- lat
-##remove the school health centers that are outdated
-##Harrison Parrk & Lane removed
-# remSchoolsIds <- c("recL9K2SFVxSGFP44", "rec4D1buynnjhcKjf")
-# listAddressGC <- listAddressGC[!listAddressGC$id %in% remSchoolsIds,]
-
-
-##THIS NEXT BLOCK OF LOGIC WILL BE REMOVED 
-##GENERAL CATEGORY HAS BEEN INCLUDED IN THE BASE
-
-##GENERAL CATEGORY
-# categorizer <- function (x){
-#   
-#   ##create the categories
-#   food <- c("Food Boxes", "Meals", "Food & Grocery Assistance")
-#   housingAndShelter <- c("Housing Services", "Renters Services", 
-#                          "Severe Weather Emergency Shelter", "Shelters",
-#                          "Winter Shelter")
-#   goods <- c("Clothing", "Clothing, Food and Hygiene Items")
-#   transit <- c("Ride Connection")
-#   healthAndWellness <- c("Recovery Services", "Health Care/Dental" , 
-#                          "HIV/AIDS", "Health Care", "Counseling/Mediation",
-#                          "Syringe Exchange", "Student Health Centers")
-#   money <- c("Utility Assistance", "Financial Assistance") 
-#   careAndSafety <- c("Pet Care", "Domestic Violence & Sexual Assault")
-#   work <- c("Employment & Training", "Employment, Social Security")
-#   legal <- c("Legal Services", "Know your Rights", "Property Recovery")
-#   dayServices <- c("Portland Restrooms", "Day Services/Hospitality", "Mail Distribution")
-#   specAssistance <- c("Youth Services", "GLBTQI Resources", "Veterans Services")
-#   
-#   if(x %in% food) return("Food")
-#   if(x %in% housingAndShelter) return("Housing & Shelter")
-#   if(x %in% goods) return("Goods")
-#   if(x %in% transit) return("Transit")
-#   if(x %in% healthAndWellness) return("Health & Wellness")
-#   if(x %in% money) return("Money")
-#   if(x %in% careAndSafety) return("Care & Safety")
-#   if(x %in% work) return("Work")
-#   if(x %in% legal) return("Legal")
-#   if(x %in% dayServices) return("Day Services")
-#   if(x %in% specAssistance) return("Specialized Assistance")
-#   ##more considional logic will beed to be added below
-#   else return(NA) ## adding this as a catch all
-#   
-#   
-# }
-# listAddressGC$general_category <- unlist(lapply(listAddressGC$main_category, categorizer)) ##This wont work
-##NOTE:clean up the domestic violence category in airtable
-
-##clean up the cols names and order
-##some of these may have changeedv
-
-# ## Testing below
-# alteredPhone <- listingPhoneJoin
-# alteredPhone$type <- toupper(alteredPhone$type)
-# write.csv(alteredPhone, "altered_phone.csv", row.names = F)
-# 
-# newResource <- resource_update(id = phoneResource$id, 
-#                                path = "/home/tim/Documents/rcrg_data_pipeline/altered_phone.csv"
-# )
 
