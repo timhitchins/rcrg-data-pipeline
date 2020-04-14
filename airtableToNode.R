@@ -1,8 +1,8 @@
 #######################################
 # AIRTABLE TO NODE ETL PIPELINE
 # 
-# THis script pulls dat from airtable, 
-# transforms it and then postd it to the 
+# This script pulls data from airtable, 
+# transforms it and then posts it to the 
 # Northwest Open Data Exchange (NODE).
 # 
 # Last update: 04/14/2020
