@@ -13,3 +13,6 @@
 
 # the produced data
 data/
+
+#R settings
+.Rhistory
