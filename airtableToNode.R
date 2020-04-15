@@ -70,7 +70,8 @@ geocodeListAddress <- function(listAddress){
   
   ##reorder cols
   GCAddressReorder <- c("id", "general_category", "main_category", "parent_organization",
-                        "listing", "service_description", "street", "street2", "city", "neighborhood", 
+                        "listing", "service_description", "covid_message"," street", 
+                        "street2", "city", "neighborhood", 
                         "postal_code", "county",
                         "website", "hours", "lon", "lat")
   listAddressGC <- listAddressGC[, GCAddressReorder] %>%
