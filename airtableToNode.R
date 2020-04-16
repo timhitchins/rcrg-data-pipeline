@@ -27,12 +27,51 @@ p_load(airtabler, tidyverse, ggmap, sf, lubridate, ckanr, leaflet, rstudioapi, d
 # WRANGLING PREP TO CREATE 
 # LISTINGS WITH JOINED ADDRESS
 ##############################
-createListingsTable <- function(listings, address){
+createListingsTable <- function(listings, address, parent, contact){
   
   print("Creating listings with addresses...")
-  listings$street <- as.character(listings$street)
-  listAddress <- listings %>% left_join(address, by=c("street" = "id")) %>% 
-    select(-c(street)) %>% rename(street=street.y) %>% 
+  ################
+  # listings <- airListings
+  # address <- airAddress
+  # parent <- airParentOrg
+  # contact <- airContacts
+  
+  ## get the NULL streets
+  listingsStreetNull <- listings %>% 
+    filter(map_lgl(street, is.null)) %>% 
+    mutate(street = as.character(street))
+  
+  ## the non-null street vals
+  unnestedListings <- listings %>% 
+    filter(!map_lgl(street, is.null)) %>% 
+    unnest(street) %>% bind_rows(listingsStreetNull) %>%
+    mutate(parent_organization = as.character(parent_organization)) %>%
+    mutate(listing = as.character(listing))
+  
+  ###############
+  listAddress <- unnestedListings %>% 
+    left_join(address[,c("id", "street", "city", "postal_code")], by=c("street" = "id")) %>% 
+    left_join(parent[,c("id", "Name")], by=c("parent_organization" = "id")) %>%
+    left_join(contact[,c("id", "listing_organization")], by=c("listing" = "id"))
+  
+  keepCols <- c("id", 
+                "general_category", 
+                "main_category", 
+                "Name", 
+                "listing_organization", 
+                "service_description", 
+                "covid_message", 
+                "street.y", 
+                "street2",
+                "city",
+                "postal_code",
+                "website",
+                "hours")  
+  
+  listAddress <- listAddress[, keepCols] %>% 
+    rename(street=street.y) %>% 
+    rename(listing=listing_organization) %>%
+    rename(parent_organization=Name) %>%
     arrange(main_category)
   
   listAddress$full_address <- ifelse(is.na(listAddress$street),
@@ -47,6 +86,12 @@ createListingsTable <- function(listings, address){
 # GEOCODE LISTINGS
 ####################
 geocodeListAddress <- function(listAddress){
+  ###############
+  listAddress <- listingAddress
+  
+  ##############
+  
+  
   print("Geocoding listings...")
   geo <- function(x){
     if(is.na(x)){
@@ -71,8 +116,8 @@ geocodeListAddress <- function(listAddress){
   ##reorder cols
   GCAddressReorder <- c("id", "general_category", "main_category", "parent_organization",
                         "listing", "service_description", "covid_message", "street", 
-                        "street2", "city", "neighborhood", 
-                        "postal_code", "county",
+                        "street2", "city",
+                        "postal_code",
                         "website", "hours", "lon", "lat")
   listAddressGC <- listAddressGC[, GCAddressReorder] %>%
     arrange(general_category, main_category)
@@ -87,6 +132,7 @@ geocodeListAddress <- function(listAddress){
 #######################
 ## clean the phone table
 createPhoneJoinTable <- function(phone, listings){
+  
   print("Creating phone join table...")
   phoneKeepCols <- c("id", "phone", "phone2", "type")
   phone <- phone[,phoneKeepCols]
@@ -269,9 +315,15 @@ NODE_API_KEY = Sys.getenv("NODE_API_KEY") ##this is the key that will be needed 
 #  Airtable and CKAN constants
 ##############################
 ##load in the airtable base
-rcrg <- airtabler::airtable(base=AIRTABLE_BASE_ID, tables=c("listings","address", "phone"))
+rcrg <- airtabler::airtable(base=AIRTABLE_BASE_ID, tables=c("listings",
+                                                            "address", 
+                                                            "phone", 
+                                                            "parent_organization", 
+                                                            "contacts"))
 ##and the individual tables
 airListings <- rcrg$listings$select_all()
+airParentOrg <- rcrg$parent_organization$select_all()
+airContacts <- rcrg$contacts$select_all()
 airAddress <- rcrg$address$select_all()
 airPhone <- rcrg$phone$select_all()
 # servicesText <- rcrg$services_text$select_all()
@@ -288,7 +340,7 @@ register_google(GOOGLE_API_KEY)
 ## register CKAN
 ckanr_setup(url = "https://opendata.imspdx.org/", key = NODE_API_KEY)
 # wrangle and create new tables
-listingAddress <- createListingsTable(airListings, airAddress ) 
+listingAddress <- createListingsTable(airListings, airAddress, airParentOrg, airContacts) 
 geocodeListingResults <- geocodeListAddress(listingAddress) 
 phoneJoinTable <- createPhoneJoinTable(airPhone, airListings)
 # create geoJSON data
