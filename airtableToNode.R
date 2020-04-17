@@ -51,13 +51,13 @@ createListingsTable <- function(listings, address, parent, contact){
   ###############
   listAddress <- unnestedListings %>% 
     left_join(address[,c("id", "street", "city", "postal_code")], by=c("street" = "id")) %>% 
-    left_join(parent[,c("id", "Name")], by=c("parent_organization" = "id")) %>%
+    left_join(parent[,c("id", "name")], by=c("parent_organization" = "id")) %>%
     left_join(contact[,c("id", "listing_organization")], by=c("listing" = "id"))
   
   keepCols <- c("id", 
                 "general_category", 
                 "main_category", 
-                "Name", 
+                "name", 
                 "listing_organization", 
                 "service_description", 
                 "covid_message", 
@@ -71,7 +71,7 @@ createListingsTable <- function(listings, address, parent, contact){
   listAddress <- listAddress[, keepCols] %>% 
     rename(street=street.y) %>% 
     rename(listing=listing_organization) %>%
-    rename(parent_organization=Name) %>%
+    rename(parent_organization=name) %>%
     arrange(main_category)
   
   listAddress$full_address <- ifelse(is.na(listAddress$street),
@@ -134,7 +134,7 @@ geocodeListAddress <- function(listAddress){
 createPhoneJoinTable <- function(phone, listings){
   
   print("Creating phone join table...")
-  phoneKeepCols <- c("id", "phone", "phone2", "type")
+  phoneKeepCols <- c("id", "phone", "phone_ext", "type")
   phone <- phone[,phoneKeepCols]
   
   ## create a join table for phone numbers and join it back to phone
@@ -143,7 +143,8 @@ createPhoneJoinTable <- function(phone, listings){
     unnest(cols = c(phone)) %>% 
     right_join(phone, by=c("phone" = "id")) %>%
     rename(phone_id = phone) %>%
-    rename(phone = phone.y)
+    rename(phone = phone.y) %>%
+    rename(phone2 = phone_ext)
   
   listPhoneJoinKeepCols <- c("id", "phone_id", "phone", "phone2", "type")
   listingPhoneJoin <- listingPhoneJoin[, listPhoneJoinKeepCols]
