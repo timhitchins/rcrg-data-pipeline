@@ -101,6 +101,11 @@ createListingsTable <- function(listings, address, parent, contact) {
   # parent <- airParentOrg
   # contact <- airContacts
   
+  ## add emeergency_message column if not included
+  if(!str_detect("emergency_message", paste(names(listings), collapse = "|"))){
+    listings$emergency_message <- NA
+  }
+  
   ## get the NULL streets
   listingsStreetNull <- listings %>%
     filter(map_lgl(street, is.null)) %>%
@@ -113,7 +118,7 @@ createListingsTable <- function(listings, address, parent, contact) {
     mutate(parent_organization = as.character(parent_organization)) %>%
     mutate(listing = as.character(listing))
   
-  ###############
+  ## unnest any listings
   listAddress <- unnestedListings %>%
     left_join(address[, c("id", "street", "city", "postal_code")], by =
                 c("street" = "id")) %>%
@@ -324,7 +329,7 @@ checkPackage <- function(packageName) {
   if ("try-error" %in% class(packageShowRes)) {
     res <- package_create(
       name = NODE_PACKAGE_NAME,
-      title = "Rose City Resource - Wildfire Assistance Dev",
+      title = "Rose City Resource - Wildfire Assistance",
       author = "Mapping Action Collective",
       owner_org = "mapping-action-collective",
       maintainer = "Tim Hitchins",
